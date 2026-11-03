@@ -4,6 +4,11 @@ import numpy as np
 import robotic as ry
 
 
+def skew(x):
+    return np.array([[0, -x[2], x[1]],
+                     [x[2], 0, -x[0]],
+                     [-x[1], x[0], 0]])
+
 class My_KOMO_Helper:
     def __init__(self, info=""):
         self.info = info
@@ -136,21 +141,37 @@ class My_KOMO_Helper:
         self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
         self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.sos, [1e1], [0,0,acc], order=2)
 
-    def retract(self, time_interval, gripper, dist=0.03):
+    def retract(self, time_interval, gripper, acc=5.):
+        f = self.komo.getFrame(gripper, time_interval[0])
+        z = f.getRotationMatrix()[:,2]
+        Z = skew(z)
+
+        # self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, 1e0 * Z, order=1)
+        # self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc*z, order=2)
+
+    def approach(self, time_interval, gripper, acc=5.):
+        f = self.komo.getFrame(gripper, time_interval[1])
+        z = f.getRotationMatrix()[:,2]
+        Z = skew(z)
+
+        # self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, 1e0 * Z, order=1)
+        # self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc*z, order=2)
+
+    def retract_alg(self, time_interval, gripper, dist=0.03):
         helper = f"_{gripper}_retract_{time_interval[0]}"
         f = self.komo.getFrame(gripper, time_interval[0])
         self.add_stable_frame(ry.JT.none, "", helper, f)
-        #  self.view(True, helper)
 
         self.komo.addObjective(time_interval, ry.FS.positionRel, [gripper, helper], ry.OT.eq, 1e2 * np.array([[1, 0, 0]]))
         self.komo.addObjective(time_interval, ry.FS.quaternionDiff, [gripper, helper], ry.OT.eq, [1e2])
         self.komo.addObjective([time_interval[1]], ry.FS.positionRel, [gripper, helper], ry.OT.ineq, -1e2 * np.array([[0, 0, 1]]), target=[0.0, 0.0, dist])
 
-    def approach(self, time_interval, gripper, dist=0.03):
+    def approach_alt(self, time_interval, gripper, dist=.05):
         helper = f"_{gripper}_approach_{time_interval[1]}"
         f = self.komo.getFrame(gripper, time_interval[1])
         self.add_stable_frame(ry.JT.none, "", helper, f)
-        #  self.view(True, helper)
 
         self.komo.addObjective(time_interval, ry.FS.positionRel, [gripper, helper], ry.OT.eq, 1e2 * np.array([[1, 0, 0]]))
         self.komo.addObjective(time_interval, ry.FS.quaternionDiff, [gripper, helper], ry.OT.eq, [1e2])
