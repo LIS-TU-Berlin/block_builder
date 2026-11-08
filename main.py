@@ -24,7 +24,7 @@ def build_scene(num_blocks=20):
         f = C.addFrame(f"block_{i}")
         f.setShape(ry.ST.ssBox, [block_width, block_width, block_length, 0.002])
         f.setColor([1.0, 0.8, 0.6])
-        f.setPosition([0.4, -0.05 * num_blocks + 0.1 * i, table_height + block_width / 2])
+        f.setPosition([0.4, -0.04 * num_blocks + 0.08 * i, table_height + block_width / 2])
         f.setQuaternion([1, 0, -1, 0])
         f.setMass(0.1)
         f.setContact(True)
@@ -35,21 +35,21 @@ def build_scene(num_blocks=20):
         a.setRelativePoseByText("d(90 1 0 0) d(90 0 1 0)")
         a.setRelativePosition([block_width / 2 + 0.0001, 0.0, block_length / 2 - aruco_width / 2 - 0.002])
 
-    C.addFrame("camera_init", args='X: "t(0 2. 1.2) d(90 1 0 0) d(180 0 0 1) d(-10 1 0 0)"')
+    C.addFrame("camera_init", args="X: [0.446389, 2.29262, 1.6405, 0.0649853, -0.086942, -0.795562, 0.596069]")
     return C
 
 
 def build_goal_scene(C: ry.Config):
     Cgoal = ry.Config()
-    Cgoal.addConfigurationCopy(C)
+    Cgoal.addFile("target.yml")
 
-    for i in range(100):
-        f = Cgoal.getFrame(f"block_{i}")
-        if f == None:
-            break
-        f.setQuaternion([1, 0, 0, 0])
-        f.setPosition([0, 0.2, table_height + block_length / 2 + i * block_length])
-
+    # Cgoal.addConfigurationCopy(C)
+    # for i in range(100):
+    #     f = Cgoal.getFrame(f"block_{i}")
+    #     if f == None:
+    #         break
+    #     f.setQuaternion([1, 0, 0, 0])
+    #     f.setPosition([0, 0.2, table_height + block_length / 2 + i * block_length])
     return Cgoal
 
 
@@ -67,61 +67,58 @@ def set_markers(C: ry.Config, pts: np.ndarray, parent: str, rots=None):
             f.setRelativeRotationMatrix(rots[i])
 
 
-def plan_look(C, camera, obj_name, verbose=1):
-    waypoints = My_KOMO_Helper()
-    waypoints.setup_sequence(C, 1, 1e-2, 1e-1)
+def plan_look(C, camera, obj_name, gripper, objs, verbose=1):
+    waypoints = My_KOMO_Helper("look")
+    waypoints.setup_sequence(C, 1, 1e-1, 1e-1)  # significant homing bias
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.eq, [1e1, 1e1, 0])  # look at
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.ineq, [0, 0, -1e1], [0.3])  # keep dist
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [camera, obj_name], ry.OT.sos, [0, 1e0, 1e0])  # straight from top
-    ret = waypoints.solve(0)
-    print("look costs/feasibilities:", ret)
-    waypoints.view(verbose > 0)
+    waypoints.komo.addObjective([1.0], ry.FS.qItself, ["l_panda_joint5", "l_panda_joint7"], ry.OT.eq, [1e0], [0.0, 0.0])  # straight from top
+    ret = waypoints.solve(verbose)
     if not ret.feasible:
         return None
 
-    motion1 = waypoints.sub_motion(0)
-    ret = motion1.solve(0)
-    motion1.view(verbose > 0)
+    motion0 = waypoints.sub_motion(0, collision_scale=0.5)
+    motion0.retract([0.0, 0.05], gripper, acc=5.0)
+    for o in objs:
+        motion0.no_collisions([0.2, 0.8], [gripper, o], margin=0.05, scale=1e2)
+    ret = motion0.solve(verbose)
     if not ret.feasible:
         return None
 
-    return motion1.path
+    return motion0.path
 
 
 def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
-    waypoints = My_KOMO_Helper()
+    waypoints = My_KOMO_Helper("pnp")
     waypoints.setup_sequence(C, 2, 1e-2, 1e-1)
     waypoints.grasp_box_constraints(1.0, gripper, obj_name, "l_palm", grasp_direction="y", margin=0.015)
     waypoints.grasp_attach(1.0, gripper, obj_name)
     waypoints.komo.addObjective([2.0], ry.FS.poseDiff, [obj_name, goal_frame], ry.OT.eq)
-    ret = waypoints.solve(0)
-    print("grasp costs/feasibilities:", ret)
-    waypoints.view(verbose > 0)
+    ret = waypoints.solve(verbose)
     if not ret.feasible:
         return None, None
 
-    motion1 = waypoints.sub_motion(0)
-    # motion1.retract([0.0, 0.1], gripper, acc=5.)
-    motion1.approach([0.85, 1.0], gripper, acc=5.0)
+    motion0 = waypoints.sub_motion(0, collision_scale=0.5)
+    # motion0.retract([0.0, 0.1], gripper, acc=5.0)
+    motion0.approach([0.85, 1.0], gripper, acc=5.0)
     for o in objs:
-        motion1.no_collisions([0.2, 0.8], [gripper, o], margin=0.05, scale=1e2)
-    ret = motion1.solve(0)
-    motion1.view(verbose > 0)
+        motion0.no_collisions([0.2, 0.8], [gripper, o], margin=0.05, scale=1e2)
+    ret = motion0.solve(verbose)
     if not ret.feasible:
         return None, None
 
-    motion2 = waypoints.sub_motion(1)
+    motion1 = waypoints.sub_motion(1, collision_scale=0.5)
     for o in objs:
         if o != obj_name:
-            motion2.no_collisions([0.1, 0.9], [obj_name, o], margin=0.02, scale=1e1)
-    motion2.up([0.0, 0.15], gripper, acc=5.0)
-    motion2.down([0.85, 1.0], gripper, acc=5.0)
-    ret = motion2.solve(0)  ## no additional constraints at all on the motion between 1st and 2nd waypoint; later: up and down motion
-    motion2.view(verbose > 0 or not ret.feasible)
+            motion1.no_collisions([0.1, 0.9], [obj_name, o], margin=0.02, scale=1e1)
+    motion1.up([0.0, 0.15], gripper, acc=5.0)
+    motion1.down([0.85, 1.0], gripper, acc=5.0)
+    ret = motion1.solve(verbose)
     if not ret.feasible:
         return None, None
 
-    return motion1.path, motion2.path
+    return motion0.path, motion1.path
 
 
 def execute_pnp(C, bot, path1, path2):
@@ -137,14 +134,14 @@ def execute_pnp(C, bot, path1, path2):
     for t in range(5):
         bot.sync(C, 0.1)
 
-    bot.gripperMove(ry.ArgWord._left, +1.0, 1.5)  # opening
+    bot.gripperMove(ry.ArgWord._left, 0.06, 1.5)  # opening
     bot.wait(C, forKeyPressed=False, forTimeToEnd=False, forGripper=True)
 
     for t in range(5):
         bot.sync(C, 0.1)
 
 
-def set_physx_parameters():
+def set_physx_parameters(sim_speed):
     # these are global parameters that influence friction, etc...
     ry.params_add(
         {
@@ -153,16 +150,16 @@ def set_physx_parameters():
             "physx/defaultRestitution": 0.2,
             # 'physx/motorKp': 1000.,
             # 'physx/motorKd': 100.,
-            "botsim/hyperSpeed": 1.0,
+            "botsim/hyperSpeed": sim_speed,
             "botsim/verbose": 0,
         }
     )  # 1 to see simulation display (not just sync'ed config); 4 to see physx internal model
 
 
-def main():
-    set_physx_parameters()
+def main(verbose=1, sim_speed=1):
+    set_physx_parameters(sim_speed)
 
-    num_blocks = 4
+    num_blocks = 14
 
     # -- setup the scene configuration:
     C = build_scene(num_blocks)
@@ -171,10 +168,6 @@ def main():
     Cgoal.view(False, "goal")
 
     goal = C.addFrame("goal_helper")
-    # # this adds a helper frame to specify the predefined grasp, here hardcoded relative to the object; for AnyGrasp perhaps in world (no parent frame) or camera coordinates (camera as parent)
-    # predefined_grasp = C.addFrame('predefined_grasp', 'obj')
-    # predefined_grasp.setRelativePosition([.0,.0,.02])  #2cm above center
-    # predefined_grasp.setShape(ry.ST.marker, [.1])
 
     objs = [f"block_{i}" for i in range(num_blocks)] + ["table"]
 
@@ -192,7 +185,7 @@ def main():
         perceive = True
         if perceive:
             # look
-            path0 = plan_look(C, "cameraWrist", obj_name, verbose=0)
+            path0 = plan_look(C, "cameraWrist", obj_name, "l_gripper", objs, verbose=verbose)
             if path0 is not None:
                 bot.move(path0, [1.0])
                 bot.wait(C, forKeyPressed=False, forTimeToEnd=True)
@@ -210,7 +203,8 @@ def main():
 
             # OpenCV finding of arucos
             pts, ids = detect_arucos(rgb)
-            V.view(rgb, False)
+            if verbose > 0:
+                V.view(rgb, False)
             pts = image_pts_to_3d(pts, depth, fxycxy).reshape(-1, 4, 3)
             centers, rots = aruco_poses(pts)
 
@@ -229,14 +223,14 @@ def main():
             C.view(False)
 
         # pick-and-place
-        path1, path2 = plan_pnp(C, "l_gripper", obj_name, goal.name, objs, verbose=0)
+        path1, path2 = plan_pnp(C, "l_gripper", obj_name, goal.name, objs, verbose=verbose)
         if path1 is not None:
             execute_pnp(C, bot, path1, path2)
         else:
-            print("== fail ==")
+            raise Exception("pnp plan failed")
 
     bot.home(C)
 
 
 if __name__ == "__main__":
-    main()
+    main(verbose=1, sim_speed=5.0)

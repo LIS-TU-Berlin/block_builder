@@ -5,47 +5,38 @@ import robotic as ry
 
 
 def skew(x):
-    return np.array([[0, -x[2], x[1]],
-                     [x[2], 0, -x[0]],
-                     [-x[1], x[0], 0]])
+    return np.array([[0, -x[2], x[1]], [x[2], 0, -x[0]], [-x[1], x[0], 0]])
+
 
 class My_KOMO_Helper:
-    def __init__(self, info=""):
+    def __init__(self, info):
         self.info = info
         self.komo = ry.KOMO()
 
-    def setup_inverse_kinematics(self, C, homing_scale=1e-1, accumulated_collisions=True, joint_limits=True, quaternion_norms=True):
-        """
-        setup a 1 phase single step problem
-        """
-        self.komo.setTiming(1.0, 1, 1.0, 0)
-        self.komo.setConfig(C, accumulated_collisions)
-        self.komo.addControlObjective([], 0, homing_scale)
-        if accumulated_collisions:
-            self.komo.addObjective([], ry.FS.accumulatedCollisions, [], ry.OT.eq, [1e0])
-        if joint_limits:
-            self.komo.addObjective([], ry.FS.jointLimits, [], ry.OT.ineq, [1e0])
+    def setup_sequence(self, C, K, homing_scale=1e-2, velocity_scale=1e-1, collision_scale=1e0, joint_limits=1e0, quaternion_norms=True):
+        self.komo.setTiming(float(K), 1, 1.0, 1)
+        self.komo.setConfig(C, collision_scale > 0.0)
+        if homing_scale > 0.0:
+            self.komo.addControlObjective([], 0, homing_scale)
+        if velocity_scale > 0.0:
+            self.komo.addControlObjective([], 1, velocity_scale)
+        if collision_scale > 0.0:
+            self.komo.addObjective([], ry.FS.accumulatedCollisions, [], ry.OT.eq, [collision_scale])
+        if joint_limits > 0.0:
+            self.komo.addObjective([], ry.FS.jointLimits, [], ry.OT.ineq, [joint_limits])
         if quaternion_norms:
             self.komo.addQuaternionNorms()
 
-    def setup_sequence(self, C, K, homing_scale=1e-2, velocity_scale=1e-1, accumulated_collisions=True, joint_limits=True, quaternion_norms=True):
-        self.komo.setTiming(float(K), 1, 1.0, 1)
-        self.komo.setConfig(C, accumulated_collisions)
-        self.komo.addControlObjective([], 0, homing_scale)
-        self.komo.addControlObjective([], 1, velocity_scale)
-        if accumulated_collisions:
-            self.komo.addObjective([], ry.FS.accumulatedCollisions, [], ry.OT.eq, [1e0])
-        if joint_limits:
-            self.komo.addObjective([], ry.FS.jointLimits, [], ry.OT.ineq, [1e0])
-        if quaternion_norms:
-            self.komo.addQuaternionNorms()
+    def setup_inverse_kinematics(self, C, homing_scale=1e-1, collision_scale=1e0, joint_limits=1e0, quaternion_norms=True):
+        self.setup_sequence(C, 1, homing_scale, 0.0, collision_scale, joint_limits, quaternion_norms)
 
     def setup_motion(self, C, K, steps_per_phase, homing_scale=0.0, acceleration_scale=1e-1, collision_scale=1e0, joint_limits_scale=1e0, quaternion_norms=True):
         self.komo.setTiming(K, steps_per_phase, 1.0, 2)
-        self.komo.setConfig(C, True)  # accumulated_collisions)
+        self.komo.setConfig(C, collision_scale > 0.0)
         if homing_scale > 0.0:
             self.komo.addControlObjective([], 0, homing_scale)
-        self.komo.addControlObjective([], 2, acceleration_scale)
+        if acceleration_scale > 0.0:
+            self.komo.addControlObjective([], 2, acceleration_scale)
         if collision_scale > 0:
             self.komo.addObjective([], ry.FS.accumulatedCollisions, [], ry.OT.eq, [collision_scale])
         if joint_limits_scale:
@@ -57,9 +48,6 @@ class My_KOMO_Helper:
         self.komo.addObjective([float(K)], ry.FS.qItself, [], ry.OT.eq, [1e0], [], 1)
 
     def setup_point_to_point_motion(self, C, q1, homing_scale=1e-2, acceleration_scale=1e-1, collision_scale=1e0, joint_limits_scale=1e0, quaternion_norms=False):
-        """
-        setup a 1 phase fine-grained motion problem with 2nd order (acceleration) control costs
-        """
         self.setup_motion(C, 1, 50, homing_scale, acceleration_scale, collision_scale, joint_limits_scale, quaternion_norms)
 
         qs = np.empty((1,), dtype=object)  # so annying to create an array of arrays
@@ -131,35 +119,35 @@ class My_KOMO_Helper:
         for i in range(0, len(objs), 2):
             self.komo.addObjective(time_interval, ry.FS.negDistance, [objs[i], objs[i + 1]], ry.OT.ineq, [scale], [-margin])
 
-    def up(self, time_interval, gripper, acc=5.):
+    def up(self, time_interval, gripper, acc=5.0):
         self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e1, 1e1, 0], order=1)
         self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
-        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.sos, [1e1], [0,0,acc], order=2)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.sos, [1e1], [0, 0, acc], order=2)
 
-    def down(self, time_interval, gripper, acc=5.):
+    def down(self, time_interval, gripper, acc=5.0):
         self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e1, 1e1, 0], order=1)
         self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
-        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.sos, [1e1], [0,0,acc], order=2)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.sos, [1e1], [0, 0, acc], order=2)
 
-    def retract(self, time_interval, gripper, acc=5.):
+    def retract(self, time_interval, gripper, acc=5.0):
         f = self.komo.getFrame(gripper, time_interval[0])
-        z = f.getRotationMatrix()[:,2]
+        z = f.getRotationMatrix()[:, 2]
         Z = skew(z)
 
         # self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, 1e0 * Z, order=1)
         # self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
-        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc*z, order=2)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc * z, order=2)
 
-    def approach(self, time_interval, gripper, acc=5.):
+    def approach(self, time_interval, gripper, acc=5.0):
         f = self.komo.getFrame(gripper, time_interval[1])
-        z = f.getRotationMatrix()[:,2]
+        z = f.getRotationMatrix()[:, 2]
         Z = skew(z)
 
         # self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, 1e0 * Z, order=1)
         # self.komo.addObjective(time_interval, ry.FS.angularVel, [gripper], ry.OT.eq, [1e0], order=1)
-        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc*z, order=2)
+        self.komo.addObjective(time_interval, ry.FS.position, [gripper], ry.OT.eq, [1e0], acc * z, order=2)
 
-    def retract_alg(self, time_interval, gripper, dist=0.03):
+    def retract_alt(self, time_interval, gripper, dist=0.03):
         helper = f"_{gripper}_retract_{time_interval[0]}"
         f = self.komo.getFrame(gripper, time_interval[0])
         self.add_stable_frame(ry.JT.none, "", helper, f)
@@ -168,7 +156,7 @@ class My_KOMO_Helper:
         self.komo.addObjective(time_interval, ry.FS.quaternionDiff, [gripper, helper], ry.OT.eq, [1e2])
         self.komo.addObjective([time_interval[1]], ry.FS.positionRel, [gripper, helper], ry.OT.ineq, -1e2 * np.array([[0, 0, 1]]), target=[0.0, 0.0, dist])
 
-    def approach_alt(self, time_interval, gripper, dist=.05):
+    def approach_alt(self, time_interval, gripper, dist=0.05):
         helper = f"_{gripper}_approach_{time_interval[1]}"
         f = self.komo.getFrame(gripper, time_interval[1])
         self.add_stable_frame(ry.JT.none, "", helper, f)
@@ -186,44 +174,25 @@ class My_KOMO_Helper:
             self.path = self.komo.getPath()
         else:
             self.path = None
-        if verbose > 0:
-            if not self.ret.feasible:
-                print(f"  -- infeasible:{self.info}\n     {self.ret}")
-                if verbose > 1:
-                    objs = self.komo.report()
-                    # pprint.pp(objs)
-                    for k, v in objs.items():
-                        print(f"objective {k}: {v}")
-                    self.komo.view(True, f"failed: {self.info}\n{self.ret}")
-            else:
-                print(f"  -- feasible:{self.info}\n     {self.ret}")
-                if verbose > 2:
-                    self.komo.view(True, f"success: {self.info}\n{self.ret}")
+
+        fail = not self.ret.feasible
+        if fail:
+            print(f"  -- infeasible:{self.info}\n     {self.ret}")
+            objs = self.komo.report()
+            for k, v in objs.items():
+                print(f"objective {k}: {v}")
+            print("======= FAILURE ====== please use left-right or shift-scroll in the viewer to inspect")
+            self.komo.view(True, f"failed: {self.info}\n{self.ret}")
+        elif verbose > 0:
+            print(f"{self.info} {self.ret}")
+            if verbose > 1:
+                self.komo.view(verbose > 2, f"{self.info}\n{self.ret}")
 
         return self.ret
 
-    def view(self, pause):
-        #     cout <<'  -- DEBUG: ' <<info <<endl
-        #     cout <<'  == solver return: ' <<*ret <<endl
-        #     cout <<'  == all KOMO objectives with increasing errors:\n' <<self.report(False, listObjectives, plotOverTime) <<endl
-        # #  cout <<'  == objectives sorted by error and Lagrange gradient:\n' <<sol.reportLagrangeGradients(self.featureNames) <<endl
-        #     cout <<'  == view objective errors over slices in gnuplot' <<endl
-        #     cout <<'  == scroll through solution in display window using SHIFT-scroll' <<endl
-        self.komo.view(pause, f"debug: {self.info}\n{self.ret}")
-
-    def play(self, C: ry.Config, duration=1.0, savePngs=False):
-        dofs = C.getJointIDs()
-        path = self.komo.getPath(dofs)
-        for t in range(self.path.shape[0]):
-            C.setJointState(path[t])
-            C.view(False, f"step {t}\n{self.info}")
-            time.sleep(duration / self.path.shape[0])
-            if savePngs:
-                C.get_viewer().savePng()
-
     def sub_motion(self, phase, fixEnd=True, homing_scale=1e-2, acceleration_scale=1e-1, collision_scale=1e0):
         C, _, q1 = self.komo.getSubProblem(phase)
-        komo = My_KOMO_Helper(f"sub_motion_{phase}--{self.info}")
+        komo = My_KOMO_Helper(f"{self.info}-motion{phase}")
         komo.setup_point_to_point_motion(C, q1, homing_scale, acceleration_scale, collision_scale)
         return komo
 
@@ -234,7 +203,3 @@ class My_KOMO_Helper:
         if explicitCollisionPairs is not None:
             rrt.setExplicitCollisionPairs(explicitCollisionPairs)
         return rrt
-
-    @property
-    def feasible(self):
-        return self.ret.feasible
