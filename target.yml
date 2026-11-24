@@ -1,6 +1,6 @@
 table: { X: [0, 0., .6], shape: ssBox, size: [2.5, 2.5, .1, .02], color: [.3] }
 
-ref: { X: [0., .3, .65] }
+ref: { X: [-.3, .3, .65] }
 
 default_shape: { shape: ssBox, size: [0.039, 0.039, 0.129, 0.002], contact: 1, mass: 0.1 }
 
