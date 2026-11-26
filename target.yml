@@ -1,27 +1,27 @@
 table: { X: [0, 0., .6], shape: ssBox, size: [2.5, 2.5, .1, .02], color: [.3] }
 
-ref: { X: [-.3, .3, .65] }
+ref: { X: [-.3, .3, .655] }
 
-default_shape: { shape: ssBox, size: [0.039, 0.039, 0.129, 0.002], contact: 1, mass: 0.1 }
+default_shape: { shape: ssBox, size: [0.039, 0.039, 0.119, 0.002], contact: 1, mass: 0.1 }
 
-block_0(ref): { Q: [-0.045, 0.045, 0.065, 1, 0, 0, 0], Include(default_shape): }
-block_1(ref): { Q: [-0.045, -0.045, 0.065, 1, 0, 0, 0], Include(default_shape): }
-block_2(ref): { Q: [0.045, 0.045, 0.065, 1, 0, 0, 0], Include(default_shape): }
-block_3(ref): { Q: [0.045, -0.045, 0.065, 1, 0, 0, 0], Include(default_shape): }
+block_0(ref): { Q: [-0.04, 0.04, 0.06, 1, 0, 0, 0], Include(default_shape): }
+block_1(ref): { Q: [-0.04, -0.04, 0.06, 1, 0, 0, 0], Include(default_shape): }
+block_2(ref): { Q: [0.04, 0.04, 0.06, 1, 0, 0, 0], Include(default_shape): }
+block_3(ref): { Q: [0.04, -0.04, 0.06, 1, 0, 0, 0], Include(default_shape): }
 
-block_4(ref): { Q: [.0, 0.045, 0.15, 1, 0, -1, 0], Include(default_shape): }
-block_5(ref): { Q: [.0, -0.045, 0.15, 1, 0, -1, 0], Include(default_shape): }
+block_4(ref): { Q: [.0, 0.04, 0.14, 1, 0, -1, 0], Include(default_shape): }
+block_5(ref): { Q: [.0, -0.04, 0.14, 1, 0, -1, 0], Include(default_shape): }
 
-block_6(ref): { Q: [-0.045, 0.045, 0.235, 1, 0, 0, 0], Include(default_shape): }
-block_7(ref): { Q: [-0.045, -0.045, 0.235, 1, 0, 0, 0], Include(default_shape): }
-block_8(ref): { Q: [0.045, 0.045, 0.235, 1, 0, 0, 0], Include(default_shape): }
-block_9(ref): { Q: [0.045, -0.045, 0.235, 1, 0, 0, 0], Include(default_shape): }
+block_6(ref): { Q: [-0.04, 0.04, 0.22, 1, 0, 0, 0], Include(default_shape): }
+block_7(ref): { Q: [-0.04, -0.04, 0.22, 1, 0, 0, 0], Include(default_shape): }
+block_8(ref): { Q: [0.04, 0.04, 0.22, 1, 0, 0, 0], Include(default_shape): }
+block_9(ref): { Q: [0.04, -0.04, 0.22, 1, 0, 0, 0], Include(default_shape): }
 
-block_10(ref): { Q: "t(-0.045 0.0 0.32) d(-90 1 0 0) d(-90 0 0 1)", Include(default_shape): }
-block_11(ref): { Q: "t(0.045 0.0 0.32) d(-90 1 0 0) d(-90 0 0 1)", Include(default_shape): }
+block_10(ref): { Q: "t(-0.04 0.0 0.3) d(-90 1 0 0) d(-90 0 0 1)", Include(default_shape): }
+block_11(ref): { Q: "t(0.04 0.0 0.3) d(-90 1 0 0) d(-90 0 0 1)", Include(default_shape): }
 
-block_12(ref): { Q: [0.0, 0.0, 0.36, 1, 0, -1, 0], Include(default_shape): }
-block_13(ref): { Q: [0.0, 0.0, 0.445, 1, 0, 0, 0], Include(default_shape): }
+block_12(ref): { Q: [0.0, 0.0, 0.34, 1, 0, -1, 0], Include(default_shape): }
+block_13(ref): { Q: [0.0, 0.0, 0.42, 1, 0, 0, 0], Include(default_shape): }
 
 Delete(default_shape):
 

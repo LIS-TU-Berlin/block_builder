@@ -168,7 +168,7 @@ class My_KOMO_Helper:
     def solve(self, verbose=1):
         sol = ry.NLP_Solver()
         sol.setProblem(self.komo.nlp())
-        sol.setOptions(damping=1e-1, verbose=verbose - 1, stopTolerance=1e-3, lambdaMax=100.0, stopInners=20, stopEvals=200)
+        sol.setOptions(damping=1e-1, verbose=verbose - 1, stopTolerance=1e-4, lambdaMax=100.0, stopInners=20, stopEvals=200)
         self.ret = sol.solve()
         if self.ret.feasible:
             self.path = self.komo.getPath()

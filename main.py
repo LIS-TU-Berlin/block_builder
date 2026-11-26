@@ -10,12 +10,13 @@ from my_manip import My_KOMO_Helper
 
 table_height = 0.65
 block_width = 0.039
-block_length = 0.129
+block_length = 0.119
 aruco_width = 9 * 0.004
 
 f_cam = "camera_0"
 f_gripper = "gripper"
 f_palm = "palm"
+
 
 def build_scene(num_blocks=20):
     C = ry.Config()
@@ -78,7 +79,7 @@ def plan_look(C, camera, obj_name, gripper, objs, verbose=1):
     waypoints.setup_sequence(C, 1, 1e-1, 1e-1)  # significant homing bias
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.eq, [1e1, 1e1, 0])  # look at
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.ineq, [0, 0, -1e1], [0.25])  # keep dist
-    waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.ineq, [0, 0, 1e1], [0.3])  # not too far to aruco?
+    waypoints.komo.addObjective([1.0], ry.FS.positionRel, [obj_name, camera], ry.OT.ineq, [0, 0, 1e1], [0.35])  # not too far to aruco?
     waypoints.komo.addObjective([1.0], ry.FS.positionRel, [camera, obj_name], ry.OT.sos, [0, 1e0, 1e0])  # straight from top
     waypoints.komo.addObjective([1.0], ry.FS.qItself, ["panda_joint5", "panda_joint7"], ry.OT.eq, [1e0], [0.0, 0.0])  # straight from top
     ret = waypoints.solve(verbose)
@@ -99,16 +100,15 @@ def plan_look(C, camera, obj_name, gripper, objs, verbose=1):
 def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
     waypoints = My_KOMO_Helper("pnp")
     waypoints.setup_sequence(C, 2, 1e-2, 1e-1)
-    waypoints.grasp_box_constraints(1.0, gripper, obj_name, f_palm, grasp_direction="y", margin=0.015)
+    waypoints.grasp_box_constraints(1.0, gripper, obj_name, f_palm, grasp_direction="y", margin=0.02)
     waypoints.grasp_attach(1.0, gripper, obj_name)
-    waypoints.komo.addObjective([1.], ry.FS.vectorZ, [gripper], ry.OT.eq, [.01], [0,0,1.])
+    waypoints.komo.addObjective([1.0], ry.FS.vectorZ, [gripper], ry.OT.sos, [1e0], [0, 0, 1.0])
     waypoints.komo.addObjective([2.0], ry.FS.poseDiff, [obj_name, goal_frame], ry.OT.eq)
-    
     ret = waypoints.solve(verbose)
     if not ret.feasible:
         return None, None
 
-    motion0 = waypoints.sub_motion(0, collision_scale=0.)
+    motion0 = waypoints.sub_motion(0, collision_scale=0.0)
     # motion0.retract([0.0, 0.1], gripper, acc=5.0)
     motion0.approach([0.85, 1.0], gripper, acc=5.0)
     # for o in objs:
@@ -117,7 +117,7 @@ def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
     if not ret.feasible:
         return None, None
 
-    motion1 = waypoints.sub_motion(1, collision_scale=0.)
+    motion1 = waypoints.sub_motion(1, collision_scale=0.0)
     # for o in objs:
     #     if o != obj_name:
     #         motion1.no_collisions([0.1, 0.9], [obj_name, o], margin=0.02, scale=1e1)
@@ -127,29 +127,40 @@ def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
     if not ret.feasible:
         return None, None
 
-
     return motion0.path, motion1.path
 
 
-def execute_pnp(C, bot:ry.BotOp, path1, path2):
-    bot.move(path1, [5.0])
-    bot.wait(C, forKeyPressed=False, forTimeToEnd=True)
+def execute_pnp(C :ry.Config, bot: ry.BotOp, path1, path2, gripper, obj):
+    bot.move(path1, [3.0])
+    key = bot.wait(C, forKeyPressed=True, forTimeToEnd=True)
+    if key == ord("q"):
+        return False
 
     # bot.gripperMove(ry.ArgWord._left, 0.01, 1.5)  # closing
     bot.gripperClose(0)
-    bot.wait(C, forKeyPressed=False, forTimeToEnd=False, forGripper=True)
+    key = bot.wait(C, forKeyPressed=True, forTimeToEnd=False, forGripper=True)
+    if key == ord("q"):
+        return False
+    C.getFrame(obj).setParent(C.getFrame(gripper), True)
 
-    bot.move(path2, [5.0])
-    bot.wait(C, forKeyPressed=False, forTimeToEnd=True)
+    bot.move(path2, [4.0])
+    key = bot.wait(C, forKeyPressed=True, forTimeToEnd=True)
+    if key == ord("q"):
+        return False
 
     for t in range(5):
         bot.sync(C, 0.1)
 
-    bot.gripperMove(ry.ArgWord._left, 0.07, 1.5)  # opening
-    bot.wait(C, forKeyPressed=False, forTimeToEnd=False, forGripper=True)
+    bot.gripperMove(ry.ArgWord._left, 0.06, 1.5)  # opening
+    key = bot.wait(C, forKeyPressed=True, forTimeToEnd=False, forGripper=True)
+    if key == ord("q"):
+        return False
+    C.getFrame(obj).unLink()
 
     for t in range(5):
         bot.sync(C, 0.1)
+
+    return True
 
 
 def set_physx_parameters(sim_speed):
@@ -165,6 +176,14 @@ def set_physx_parameters(sim_speed):
             "botsim/verbose": 0,
         }
     )  # 1 to see simulation display (not just sync'ed config); 4 to see physx internal model
+
+    ry.params_add(
+        {
+            "RealSense/autoExposure": False,
+            "RealSense/exposure": 100,
+            "RealSense/white": 3000,
+        }
+    )
 
 
 def main(verbose=1, sim_speed=1, real=False):
@@ -184,24 +203,20 @@ def main(verbose=1, sim_speed=1, real=False):
 
     # launch the robot
     bot = ry.BotOp(C, useRealRobot=real)
-    bot.gripperMove(0, 0.075)
+    bot.gripperMove(0, 0.06, 1.5)
     V = ry.ImageViewer()
 
-    # fxycxy = bot.getCameraFxycxy(f_cam)
-    # print(f"BOTOPPPPPPPPPPPPPPPPPP{fxycxy}")
-    # print(f"config{C.getFrame(f_cam).getAttributes()}")
-    fxycxy = C.getFrame(f_cam).getAttributes()['fxycxy']
+    fxycxy = C.getFrame(f_cam).getAttributes()["fxycxy"]
 
     bot.home(C)
     if real:
         realsense_frames = [f for f in C.getFrames() if "realsense" in f.getAttributes()]
         bot.launch_MultiRealSense(realsense_frames, captureColor=True, captureDepth=True)
 
-
     print("Waiting for images")
     while True:
         rgb, depth = bot.getImageAndDepth(f_cam)
-        bot.sync(C, .1)
+        bot.sync(C, 0.1)
         if len(rgb):
             break
 
@@ -214,12 +229,15 @@ def main(verbose=1, sim_speed=1, real=False):
             # look
             path0 = plan_look(C, f_cam, obj_name, f_gripper, objs, verbose=verbose)
             if path0 is not None:
-                bot.move(path0, [5.0])
-                bot.wait(C, forKeyPressed=False, forTimeToEnd=True)
+                bot.move(path0, [4.0])
+                key = bot.wait(C, forKeyPressed=True, forTimeToEnd=True)
+                if key == ord("q"):
+                    break
             else:
-                raise Exception("look plan failed")
+                print("== look plan failed")
+                break
 
-            # this is important: you need "/home/shiping/code/roboticsLab-tutor/roboticslab-tutor-private/assignments/04/manip_helper.py", line 212to sleep, otherwise you grab the image during motion from a pretty undefined pose;
+            # this is important: you need to sleep, otherwise you grab the image during motion from a pretty undefined pose;
             time.sleep(0.8)
             # for _ in range(8):
             # bot.sync(C, 0.1)
@@ -232,6 +250,9 @@ def main(verbose=1, sim_speed=1, real=False):
             pts, ids = detect_arucos(rgb)
             if verbose > 0:
                 V.view(rgb, False)
+            if ids.size==0:
+                print("== can't find aruco!")
+                break
             pts = image_pts_to_3d(pts, depth, fxycxy).reshape(-1, 4, 3)
             centers, rots = aruco_poses(pts)
 
@@ -252,9 +273,16 @@ def main(verbose=1, sim_speed=1, real=False):
         # pick-and-place
         path1, path2 = plan_pnp(C, f_gripper, obj_name, goal.name, objs, verbose=verbose)
         if path1 is not None:
-            execute_pnp(C, bot, path1, path2)
+            good = execute_pnp(C, bot, path1, path2, f_gripper, obj_name)
         else:
-            raise Exception("pnp plan failed")
+            print("== pnp plan failed")
+            break
+
+        # assume the object is exactly as intended (otherwise, mini collisions kill the KOMO problems)
+        C.getFrame(obj_name).setPose(goal.getPose())
+       
+        if not good:
+            break
 
     bot.home(C)
 
