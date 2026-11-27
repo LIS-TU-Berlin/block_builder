@@ -14,24 +14,22 @@ block_length = 0.119
 aruco_width = 9 * 0.004
 
 f_cam = "camera_0"
+f_cam_coll = "camera_0_coll"
 f_gripper = "gripper"
 f_palm = "palm"
+f_table = "table"
 
 
 def build_scene(num_blocks=20):
     C = ry.Config()
     # C.addFile("$RAI_PATH/scenarios/pandaSingle.g")
-    C.addFile("/home/shiping/git/calibration/scenes/single_right/scene_calib.yml")
+    C.addFile("../calibration/scenes/single_right/scene_calib.yml")
     C.addFrame("l_gripper", "gripper")
-    f = C.getFrame(f_cam)
-    print(C.getFrameNames())
-    # if f is not None:
-    #     C.delFrame(f)
     for i in range(num_blocks):
         f = C.addFrame(f"block_{i}")
         f.setShape(ry.ST.ssBox, [block_width, block_width, block_length, 0.002])
         f.setColor([1.0, 0.8, 0.6])
-        f.setPosition([0.1, -0.0 * num_blocks + 0.14 * i, table_height + block_width / 2])
+        f.setPosition([0.2, -0.1 + 0.08 * i, table_height + block_width / 2])
         f.setQuaternion([1, 0, -1, 0])
         f.setMass(0.1)
         f.setContact(True)
@@ -88,6 +86,7 @@ def plan_look(C, camera, obj_name, gripper, objs, verbose=1):
 
     motion0 = waypoints.sub_motion(0, collision_scale=0.5)
     motion0.retract([0.0, 0.15], gripper, acc=5.0)
+    motion0.no_collisions([], [f_cam_coll, f_table])
     for o in objs:
         motion0.no_collisions([0.2, 0.8], [gripper, o], margin=0.05, scale=1e2)
     ret = motion0.solve(verbose)
@@ -102,8 +101,9 @@ def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
     waypoints.setup_sequence(C, 2, 1e-2, 1e-1)
     waypoints.grasp_box_constraints(1.0, gripper, obj_name, f_palm, grasp_direction="y", margin=0.02)
     waypoints.grasp_attach(1.0, gripper, obj_name)
-    waypoints.komo.addObjective([1.0], ry.FS.vectorZ, [gripper], ry.OT.sos, [1e0], [0, 0, 1.0])
-    waypoints.komo.addObjective([2.0], ry.FS.poseDiff, [obj_name, goal_frame], ry.OT.eq)
+    # waypoints.komo.addObjective([1.0], ry.FS.vectorZ, [gripper], ry.OT.sos, [1e0], [0, 0, 1.0])
+    waypoints.komo.addObjective([2.0], ry.FS.poseDiff, [obj_name, goal_frame], ry.OT.eq, [1e1])
+    waypoints.no_collisions([], [f_cam_coll, obj_name, f_cam_coll, f_table])
     ret = waypoints.solve(verbose)
     if not ret.feasible:
         return None, None
@@ -130,14 +130,16 @@ def plan_pnp(C, gripper, obj_name, goal_frame, objs, verbose=1):
     return motion0.path, motion1.path
 
 
-def execute_pnp(C :ry.Config, bot: ry.BotOp, path1, path2, gripper, obj):
+def execute_pnp(C :ry.Config, bot: ry.BotOp, path1, path2, gripper, obj, real):
     bot.move(path1, [3.0])
     key = bot.wait(C, forKeyPressed=True, forTimeToEnd=True)
     if key == ord("q"):
         return False
 
-    # bot.gripperMove(ry.ArgWord._left, 0.01, 1.5)  # closing
-    bot.gripperClose(0)
+    if not real:
+        bot.gripperMove(ry.ArgWord._left, 0.01, 1.5)  # closing
+    else:
+        bot.gripperClose(0)
     key = bot.wait(C, forKeyPressed=True, forTimeToEnd=False, forGripper=True)
     if key == ord("q"):
         return False
@@ -150,6 +152,8 @@ def execute_pnp(C :ry.Config, bot: ry.BotOp, path1, path2, gripper, obj):
 
     for t in range(5):
         bot.sync(C, 0.1)
+
+    # bot.wait(C, True, False)
 
     bot.gripperMove(ry.ArgWord._left, 0.06, 1.5)  # opening
     key = bot.wait(C, forKeyPressed=True, forTimeToEnd=False, forGripper=True)
@@ -189,7 +193,7 @@ def set_physx_parameters(sim_speed):
 def main(verbose=1, sim_speed=1, real=False):
     set_physx_parameters(sim_speed)
 
-    num_blocks = 4
+    num_blocks = 8
 
     # -- setup the scene configuration:
     C = build_scene(num_blocks)
@@ -273,13 +277,16 @@ def main(verbose=1, sim_speed=1, real=False):
         # pick-and-place
         path1, path2 = plan_pnp(C, f_gripper, obj_name, goal.name, objs, verbose=verbose)
         if path1 is not None:
-            good = execute_pnp(C, bot, path1, path2, f_gripper, obj_name)
+            good = execute_pnp(C, bot, path1, path2, f_gripper, obj_name, real)
         else:
             print("== pnp plan failed")
             break
 
         # assume the object is exactly as intended (otherwise, mini collisions kill the KOMO problems)
-        C.getFrame(obj_name).setPose(goal.getPose())
+        if not real:
+            pass
+        else:
+            C.getFrame(obj_name).setPose(goal.getPose())
        
         if not good:
             break
@@ -288,4 +295,4 @@ def main(verbose=1, sim_speed=1, real=False):
 
 
 if __name__ == "__main__":
-    main(verbose=1, sim_speed=1.0, real=True)
+    main(verbose=1, sim_speed=5.0, real=False)
